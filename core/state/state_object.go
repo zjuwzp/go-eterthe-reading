@@ -95,11 +95,11 @@ func (s *stateObject) empty() bool {
 
 // Account is the Ethereum consensus representation of accounts.
 // These objects are stored in the main account trie.
-type Account struct {
+type Account struct {				//账户状态包含四个属性
 	Nonce    uint64
 	Balance  *big.Int
-	Root     common.Hash // merkle root of the storage trie
-	CodeHash []byte
+	Root     common.Hash // merkle root of the storage trie	理论上是指Merkle Patricia树的根节点256位的Hash值
+	CodeHash []byte		//此账户EVM代码的hash值。对于外部拥有账户，codeHash域是一个空字符串的Hash值。对于合约账户，就是代码的Hash作为codeHash保存。
 }
 
 // newObject creates a state object.

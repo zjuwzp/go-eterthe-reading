@@ -646,6 +646,7 @@ func NewListStream(r io.Reader, len uint64) *Stream {
 // If the input does not contain an RLP string, the returned
 // error will be ErrExpectedString.
 func (s *Stream) Bytes() ([]byte, error) {
+	//获取当前需要解析的类型和长度
 	kind, size, err := s.Kind()
 	if err != nil {
 		return nil, err
@@ -653,8 +654,8 @@ func (s *Stream) Bytes() ([]byte, error) {
 	switch kind {
 	case Byte:
 		s.kind = -1 // rearm Kind
-		return []byte{s.byteval}, nil
-	case String:
+		return []byte{s.byteval}, nil				//直接返回Byte的值
+	case String:							//读取指定长度的值然后返回
 		b := make([]byte, size)
 		if err = s.readFull(b); err != nil {
 			return nil, err
@@ -759,9 +760,10 @@ func (s *Stream) List() (size uint64, err error) {
 	if err != nil {
 		return 0, err
 	}
-	if kind != List {
+	if kind != List {						//如果类型不匹配那么就抛出错误
 		return 0, ErrExpectedList
 	}
+	//把一个listpos对象压入到堆栈，pos字段记录了当前list已经读取了多少字节的数据，size字段记录了这个list一共需要读取多少字节。处理到最后会对比这两个字段，如果不相等，那么会抛出异常。
 	s.stack = append(s.stack, listpos{0, size})
 	s.kind = -1
 	s.size = 0
@@ -775,10 +777,12 @@ func (s *Stream) ListEnd() error {
 		return errNotInList
 	}
 	tos := s.stack[len(s.stack)-1]
+	//如果当前读取的数据数量pos不等于声明的数据长度size，抛出异常
 	if tos.pos != tos.size {
 		return errNotAtEOL
 	}
 	s.stack = s.stack[:len(s.stack)-1] // pop
+	//如果当前堆栈不为空，那么就在堆栈的栈顶的pos加上当前处理完毕的数据长度
 	if len(s.stack) > 0 {
 		s.stack[len(s.stack)-1].pos += tos.size
 	}
@@ -794,14 +798,16 @@ func (s *Stream) Decode(val interface{}) error {
 	if val == nil {
 		return errDecodeIntoNil
 	}
-	rval := reflect.ValueOf(val)
+	rval := reflect.ValueOf(val)			//ValueOf返回接口保管的具体值的Value
 	rtyp := rval.Type()
+	//为何一定要是指针？？？？？？？？？？？？？？？？？？？？？
 	if rtyp.Kind() != reflect.Ptr {
 		return errNoPointer
 	}
 	if rval.IsNil() {
 		return errDecodeIntoNil
 	}
+	//rtyp.Elem()：取出指针rtyp对应的值
 	info, err := cachedTypeInfo(rtyp.Elem(), tags{})
 	if err != nil {
 		return err

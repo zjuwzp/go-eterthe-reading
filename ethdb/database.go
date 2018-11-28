@@ -73,11 +73,12 @@ func NewLDBDatabase(file string, cache int, handles int) (*LDBDatabase, error) {
 	logger.Info("Allocated cache and file handles", "cache", cache, "handles", handles)
 
 	// Open the db and recover any potential corruptions
+	//file就是leveldb的路径，以太坊的默认路径是/Users/$Owner/Library/Ethereum/geth/chaindata
 	db, err := leveldb.OpenFile(file, &opt.Options{
-		OpenFilesCacheCapacity: handles,
-		BlockCacheCapacity:     cache / 2 * opt.MiB,
-		WriteBuffer:            cache / 4 * opt.MiB, // Two of these are used internally
-		Filter:                 filter.NewBloomFilter(10),
+		OpenFilesCacheCapacity: handles,				//以太坊设置的是1024，作用应该是可打开的文件数吧，待确认？？？？？
+		BlockCacheCapacity:     cache / 2 * opt.MiB,		//设置的是cache的一半，是384M
+		WriteBuffer:            cache / 4 * opt.MiB, // Two of these are used internally		这个是memtable的size
+		Filter:                 filter.NewBloomFilter(10),			//每个level文件会建filter，10的意思是每个key hash的次数。
 	})
 	if _, corrupted := err.(*errors.ErrCorrupted); corrupted {
 		db, err = leveldb.RecoverFile(file, nil)

@@ -65,14 +65,14 @@ type LeafCallback func(leaf []byte, parent common.Hash) error
 //
 // Trie is not safe for concurrent use.
 type Trie struct {
-	db   *Database
+	db   *Database			//db是后端的KV存储，trie的结构最终都是需要通过KV的形式存储到数据库里面去，然后启动的时候是需要从数据库里面加载的
 	root node
 
 	// Cache generation values.
 	// cachegen increases by one with each commit operation.
 	// new nodes are tagged with the current generation and unloaded
 	// when their generation is older than than cachegen-cachelimit.
-	cachegen, cachelimit uint16
+	cachegen, cachelimit uint16			//cachegen字段指示了当前Trie树的cache时代，每次调用Commit操作的时候，会增加Trie树的cache时代。
 }
 
 // SetCacheLimit sets the number of 'cache generations' to keep.
@@ -92,15 +92,19 @@ func (t *Trie) newFlag() nodeFlag {
 // trie is initially empty and does not require a database. Otherwise,
 // New will panic if db is nil and returns a MissingNodeError if root does
 // not exist in the database. Accessing the trie loads nodes from db on demand.
+//New方法使用来自db的现有根节点创建一个trie。如果root是空字符串的零哈希或sha3哈希，trie最初是空的，不需要数据库。否则，如果db不存在会panic
+//如果root不存在数据库中，会返回一个MissingNodeError异常，访问trie根据需要从db加载节点。
+//如果hash值不是空值的化，就说明是从数据库加载一个已经存在的Trie树， 就调用trei.resolveHash方法来加载整颗Trie树，如果root是空，那么就新建一颗Trie树返回。
 func New(root common.Hash, db *Database) (*Trie, error) {
 	if db == nil {
 		panic("trie.New called without a database")
 	}
-	trie := &Trie{
+	trie := &Trie{			//新建一棵树
 		db: db,
 	}
-	if root != (common.Hash{}) && root != emptyRoot {
-		rootnode, err := trie.resolveHash(root[:], nil)
+	//common.Hash为一个字节数组
+	if root != (common.Hash{}) && root != emptyRoot {				//emptyRoot是已知的空trie的根哈希。 Hash是[32]byte的别名
+		rootnode, err := trie.resolveHash(root[:], nil)		//调用trei.resolveHash方法来加载整颗Trie树
 		if err != nil {
 			return nil, err
 		}
@@ -137,8 +141,9 @@ func (t *Trie) TryGet(key []byte) ([]byte, error) {
 	return value, err
 }
 
+//简单的遍历Trie树，来获取Key的信息。
 func (t *Trie) tryGet(origNode node, key []byte, pos int) (value []byte, newnode node, didResolve bool, err error) {
-	switch n := (origNode).(type) {
+	switch n := (origNode).(type) {				//(origNode).(type)？？？？？？？？？？？？？？？
 	case nil:
 		return nil, nil, false, nil
 	case valueNode:
@@ -213,6 +218,8 @@ func (t *Trie) TryUpdate(key, value []byte) error {
 	return nil
 }
 
+//参数node是当前插入的节点，prefix是当前已经处理完的部分key， key是还没有处理玩的部分key, 完整的key = prefix + key。 value是需要插入的值。
+// 返回值bool是操作是否改变了Trie树(dirty)，node是插入完成后的子树的根节点， error是错误信息。
 func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error) {
 	if len(key) == 0 {
 		if v, ok := n.(valueNode); ok {
@@ -220,65 +227,78 @@ func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error
 		}
 		return true, value, nil
 	}
-	switch n := n.(type) {
-	case *shortNode:
-		matchlen := prefixLen(key, n.Key)
-		// If the whole key matches, keep this short node as is
-		// and only update the value.
-		if matchlen == len(n.Key) {
-			dirty, nn, err := t.insert(n.Val, append(prefix, key[:matchlen]...), key[matchlen:], value)
+	switch n := n.(type) {				//n.(type)是什么语法？？？？？？？？？？？？？？？？？？？？？？？？？？？？
+		case *shortNode:			//当前的根节点类型是shortNode(也就是叶子节点)
+			//返回key和n.Key的公共长度
+			matchlen := prefixLen(key, n.Key)
+			// If the whole key matches, keep this short node as is
+			// and only update the value.
+			if matchlen == len(n.Key) {					//如果公共前缀就等于key
+					dirty, nn, err := t.insert(n.Val, append(prefix, key[:matchlen]...), key[matchlen:], value)
+					//如果value也一样的(dirty == false)，那么返回错误。
+					if !dirty || err != nil {
+						return false, n, err
+					}
+					//如果没有错误就更新shortNode的值然后返回。
+					return true, &shortNode{n.Key, nn, t.newFlag()}, nil
+			}
+			// Otherwise branch out at the index where they differ.
+			//如果公共前缀不完全匹配，那么就需要把公共前缀提取出来形成一个独立的节点(扩展节点),扩展节点后面连接一个branch节点，branch节点后面看情况连接两个short节点。
+			//创建一个分支节点
+			branch := &fullNode{flags: t.newFlag()}
+			var err error
+			//在branch节点的Children位置调用t.insert插入第一个short节点
+			_, branch.Children[n.Key[matchlen]], err = t.insert(nil, append(prefix, n.Key[:matchlen+1]...), n.Key[matchlen+1:], n.Val)
+			if err != nil {
+				return false, nil, err
+			}
+			//在branch节点的Children位置调用t.insert插入第二个short节点
+			_, branch.Children[key[matchlen]], err = t.insert(nil, append(prefix, key[:matchlen+1]...), key[matchlen+1:], value)
+			if err != nil {
+				return false, nil, err
+			}
+			// Replace this shortNode with the branch if it occurs at index 0.
+			if matchlen == 0 {
+				return true, branch, nil
+			}
+			// Otherwise, replace it with a short node leading up to the branch.
+			return true, &shortNode{key[:matchlen], branch, t.newFlag()}, nil
+
+		//分支节点
+		//直接往对应的孩子节点调用insert方法,然后把对应的孩子节点指向新生成的节点
+		case *fullNode:
+			dirty, nn, err := t.insert(n.Children[key[0]], append(prefix, key[0]), key[1:], value)
 			if !dirty || err != nil {
 				return false, n, err
 			}
-			return true, &shortNode{n.Key, nn, t.newFlag()}, nil
-		}
-		// Otherwise branch out at the index where they differ.
-		branch := &fullNode{flags: t.newFlag()}
-		var err error
-		_, branch.Children[n.Key[matchlen]], err = t.insert(nil, append(prefix, n.Key[:matchlen+1]...), n.Key[matchlen+1:], n.Val)
-		if err != nil {
-			return false, nil, err
-		}
-		_, branch.Children[key[matchlen]], err = t.insert(nil, append(prefix, key[:matchlen+1]...), key[matchlen+1:], value)
-		if err != nil {
-			return false, nil, err
-		}
-		// Replace this shortNode with the branch if it occurs at index 0.
-		if matchlen == 0 {
-			return true, branch, nil
-		}
-		// Otherwise, replace it with a short node leading up to the branch.
-		return true, &shortNode{key[:matchlen], branch, t.newFlag()}, nil
+			n = n.copy()
+			n.flags = t.newFlag()
+			n.Children[key[0]] = nn
+			return true, n, nil
 
-	case *fullNode:
-		dirty, nn, err := t.insert(n.Children[key[0]], append(prefix, key[0]), key[1:], value)
-		if !dirty || err != nil {
-			return false, n, err
-		}
-		n = n.copy()
-		n.flags = t.newFlag()
-		n.Children[key[0]] = nn
-		return true, n, nil
+		//一颗全新的Trie树的节点就是nil的,这个时候整颗树是空的
+		case nil:
+			return true, &shortNode{key, value, t.newFlag()}, nil			//shortNode：扩展节点、叶子节点
 
-	case nil:
-		return true, &shortNode{key, value, t.newFlag()}, nil
+		//hashNode：当前节点还没有加载到内存，还在数据库里面
+		case hashNode:
+			// We've hit a part of the trie that isn't loaded yet. Load
+			// the node and insert into it. This leaves all child nodes on
+			// the path to the value in the trie.
+			//将节点加载到内存
+			rn, err := t.resolveHash(n, prefix)
+			if err != nil {
+				return false, nil, err
+			}
+			//插入节点
+			dirty, nn, err := t.insert(rn, prefix, key, value)
+			if !dirty || err != nil {
+				return false, rn, err
+			}
+			return true, nn, nil
 
-	case hashNode:
-		// We've hit a part of the trie that isn't loaded yet. Load
-		// the node and insert into it. This leaves all child nodes on
-		// the path to the value in the trie.
-		rn, err := t.resolveHash(n, prefix)
-		if err != nil {
-			return false, nil, err
-		}
-		dirty, nn, err := t.insert(rn, prefix, key, value)
-		if !dirty || err != nil {
-			return false, rn, err
-		}
-		return true, nn, nil
-
-	default:
-		panic(fmt.Sprintf("%T: invalid node: %v", n, n))
+		default:
+			panic(fmt.Sprintf("%T: invalid node: %v", n, n))
 	}
 }
 

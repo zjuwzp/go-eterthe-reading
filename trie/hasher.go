@@ -74,6 +74,7 @@ func returnHasherToPool(h *hasher) {
 
 // hash collapses a node down into a hash node, also returning a copy of the
 // original node initialized with the computed hash to replace the original one.
+//hash方法主要做了两个操作。 一个是保留原有的树形结构，并用cache变量中， 另一个是计算原有树形结构的hash并把hash值存放到cache变量中保存下来。
 func (h *hasher) hash(n node, db *Database, force bool) (node, node, error) {
 	// If we're not storing the node, just hashing, use available cached data
 	if hash, dirty := n.cache(); hash != nil {
@@ -91,10 +92,12 @@ func (h *hasher) hash(n node, db *Database, force bool) (node, node, error) {
 		}
 	}
 	// Trie not processed yet or needs storage, walk the children
+	//hashChildren：把所有的子节点的hash值求出来，把原有的子节点替换成子节点的hash值。
 	collapsed, cached, err := h.hashChildren(n, db)
 	if err != nil {
 		return hashNode{}, n, err
 	}
+	//调用store方法计算当前节点的hash值，并把当前节点的hash值放入cache节点，设置dirty参数为false(新创建的节点的dirty值是为true的)，然后返回。
 	hashed, err := h.store(collapsed, db, force)
 	if err != nil {
 		return hashNode{}, n, err
@@ -170,6 +173,7 @@ func (h *hasher) store(n node, db *Database, force bool) (node, error) {
 	}
 	// Generate the RLP encoding of the node
 	h.tmp.Reset()
+	//对这个节点进行编码
 	if err := rlp.Encode(&h.tmp, n); err != nil {
 		panic("encode error: " + err.Error())
 	}

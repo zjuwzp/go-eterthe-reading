@@ -28,7 +28,7 @@ import (
  */
 type MemDatabase struct {
 	db   map[string][]byte
-	lock sync.RWMutex
+	lock sync.RWMutex					//是读写互斥锁，该锁可以被同时多个读取者持有或唯一个写入者持有。
 }
 
 func NewMemDatabase() *MemDatabase {
@@ -44,41 +44,44 @@ func NewMemDatabaseWithCap(size int) *MemDatabase {
 }
 
 func (db *MemDatabase) Put(key []byte, value []byte) error {
-	db.lock.Lock()
-	defer db.lock.Unlock()
+	db.lock.Lock()					//将db.lock锁定为写入状态，禁止其他线程读取或者写入。
+	defer db.lock.Unlock()			//这条语句在return之后才执行
 
 	db.db[string(key)] = common.CopyBytes(value)
 	return nil
 }
 
+//判断数据库中是否存在某个值
 func (db *MemDatabase) Has(key []byte) (bool, error) {
-	db.lock.RLock()
+	db.lock.RLock()			//RLock方法将rw锁定为读取状态，禁止其他线程写入，但不禁止读取。
 	defer db.lock.RUnlock()
 
-	_, ok := db.db[string(key)]
+	_, ok := db.db[string(key)]				//ok为true则存在
 	return ok, nil
 }
 
 func (db *MemDatabase) Get(key []byte) ([]byte, error) {
-	db.lock.RLock()
+	db.lock.RLock()			//锁定为读取状态，禁止其他线程写入
 	defer db.lock.RUnlock()
 
 	if entry, ok := db.db[string(key)]; ok {
-		return common.CopyBytes(entry), nil
+		return common.CopyBytes(entry), nil			//common.CopyBytes(entry)表示entry的复制
 	}
 	return nil, errors.New("not found")
 }
 
+//得到所有的key
 func (db *MemDatabase) Keys() [][]byte {
 	db.lock.RLock()
 	defer db.lock.RUnlock()
 
-	keys := [][]byte{}
+	keys := [][]byte{}			//二维切片
 	for key := range db.db {
 		keys = append(keys, []byte(key))
 	}
 	return keys
 }
+
 
 func (db *MemDatabase) Delete(key []byte) error {
 	db.lock.Lock()
@@ -94,10 +97,12 @@ func (db *MemDatabase) NewBatch() Batch {
 	return &memBatch{db: db}
 }
 
-func (db *MemDatabase) Len() int { return len(db.db) }
+func (db *MemDatabase) Len() int {
+	return len(db.db)
+}
 
 type kv struct {
-	k, v []byte
+	k, v []byte			//这里是用[]byte定义了k，v两个字段
 	del  bool
 }
 
@@ -115,7 +120,7 @@ func (b *memBatch) Put(key, value []byte) error {
 
 func (b *memBatch) Delete(key []byte) error {
 	b.writes = append(b.writes, kv{common.CopyBytes(key), nil, true})
-	b.size += 1
+	b.size += 1				//删除是加一个值(带标记)？？？？？？？？？？？？？？？？？？？？？
 	return nil
 }
 

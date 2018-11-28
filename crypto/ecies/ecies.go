@@ -50,7 +50,7 @@ var (
 	ErrSharedKeyTooBig            = fmt.Errorf("ecies: shared key params are too big")
 )
 
-// PublicKey is a representation of an elliptic curve public key.
+// PublicKey is a representation of an elliptic curve public key.公钥是椭圆曲线公钥的表示形式。
 type PublicKey struct {
 	X *big.Int
 	Y *big.Int

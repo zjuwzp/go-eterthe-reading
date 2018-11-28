@@ -27,12 +27,14 @@ import (
 var (
 	// Common encoded values.
 	// These are useful when implementing EncodeRLP.
-	EmptyString = []byte{0x80}
+	//首先定义了空字符串和空List的值，分别是 0x80和0xC0。 注意，整形的0值的对应值也是0x80。
+	EmptyString = []byte{0x80}						//注意：EmptyString定义的关键字var在上面
 	EmptyList   = []byte{0xC0}
 )
 
 // Encoder is implemented by types that require custom
 // encoding rules or want to encode private fields.
+//定义了一个接口类型给别的类型实现 EncodeRLP
 type Encoder interface {
 	// EncodeRLP should write the RLP encoding of its receiver to w.
 	// If the implementation is a pointer method, it may also be
@@ -77,6 +79,7 @@ type Encoder interface {
 //
 // Boolean values are not supported, nor are signed integers, floating
 // point numbers, maps, channels and functions.
+//最重要的方法， 大部分的EncodeRLP方法都是直接调用了这个方法Encode方法。
 func Encode(w io.Writer, val interface{}) error {
 	if outer, ok := w.(*encbuf); ok {
 		// Encode was called by some type's EncodeRLP.
@@ -118,6 +121,7 @@ func EncodeToReader(val interface{}) (size int, r io.Reader, err error) {
 	return eb.size(), &encReader{buf: eb}, nil
 }
 
+//encbuf是encode buffer的简写，这个是在encode的过程中充当buffer的作用。
 type encbuf struct {
 	str     []byte      // string data, contains everything except list headers
 	lheads  []*listhead // all list headers
@@ -126,7 +130,9 @@ type encbuf struct {
 }
 
 type listhead struct {
+	//offset字段记录了列表数据在str字段的哪个位置
 	offset int // index of this header in string data
+	//包含列表头的编码后的数据的总长度
 	size   int // total size of encoded data (including list headers)
 }
 
@@ -189,12 +195,14 @@ func (w *encbuf) encode(val interface{}) error {
 
 func (w *encbuf) encodeStringHeader(size int) {
 	if size < 56 {
-		w.str = append(w.str, 0x80+byte(size))
+		w.str = append(w.str, 0x80+byte(size))			//byte其实是uint8的别名，这么一转换是为了节省空间吗？？？？？？
 	} else {
 		// TODO: encode to w.str directly
-		sizesize := putint(w.sizebuf[1:], uint64(size))
+		sizesize := putint(w.sizebuf[1:], uint64(size))		//返回的sizesize表示长度size所占的字节数
+		//单字节前缀：0xb7加上，字符串的长度的**二进制形式**的字节长度（即长度值换为二进制后占几个字节）
 		w.sizebuf[0] = 0xB7 + byte(sizesize)
-		w.str = append(w.str, w.sizebuf[:sizesize+1]...)
+		//如果sizesize为1（即长度小于256），则w.sizebuf[:sizesize+1] = w.sizebuf[:2]，则包括了w.sizebuf[0]、w.sizebuf[1]，但是这里w.sizebuf[1]表示什么呢？？？？？
+		w.str = append(w.str, w.sizebuf[:sizesize+1]...)	//append(slice, anotherSlice...)：将两个切片拼接在一起，注意在第二个slice的名称后面加三个点
 	}
 }
 
@@ -215,6 +223,7 @@ func (w *encbuf) list() *listhead {
 }
 
 func (w *encbuf) listEnd(lh *listhead) {
+	//lh.size记录了list开始的时候的队列头应该占用的长度 w.size()返回的是str的长度加上lhsize
 	lh.size = w.size() - lh.offset - lh.size
 	if lh.size < 56 {
 		w.lhsize++ // length encoded into kind tag
@@ -227,6 +236,7 @@ func (w *encbuf) size() int {
 	return len(w.str) + w.lhsize
 }
 
+//对listhead进行处理，组装成完整的RLP数据
 func (w *encbuf) toBytes() []byte {
 	out := make([]byte, w.size())
 	strpos := 0
@@ -343,10 +353,10 @@ var (
 
 // makeWriter creates a writer function for the given type.
 func makeWriter(typ reflect.Type, ts tags) (writer, error) {
-	kind := typ.Kind()
+	kind := typ.Kind()			//类型归属的种类（Kind）
 	switch {
-	case typ == rawValueType:
-		return writeRawValue, nil
+	case typ == rawValueType:				//[]byte类型
+		return writeRawValue, nil			//这里只是根据类型返回对应的函数名，而并非调用函数。
 	case typ.Implements(encoderInterface):
 		return writeEncoder, nil
 	case kind != reflect.Ptr && reflect.PtrTo(typ).Implements(encoderInterface):
@@ -363,6 +373,7 @@ func makeWriter(typ reflect.Type, ts tags) (writer, error) {
 		return writeBool, nil
 	case kind == reflect.String:
 		return writeString, nil
+	// Elem()方法获取这个指针指向的元素类型
 	case kind == reflect.Slice && isByte(typ.Elem()):
 		return writeBytes, nil
 	case kind == reflect.Array && isByte(typ.Elem()):
@@ -370,7 +381,7 @@ func makeWriter(typ reflect.Type, ts tags) (writer, error) {
 	case kind == reflect.Slice || kind == reflect.Array:
 		return makeSliceWriter(typ, ts)
 	case kind == reflect.Struct:
-		return makeStructWriter(typ)
+		return makeStructWriter(typ)				//结构体类型的处理
 	case kind == reflect.Ptr:
 		return makePtrWriter(typ)
 	default:
@@ -381,13 +392,14 @@ func makeWriter(typ reflect.Type, ts tags) (writer, error) {
 func isByte(typ reflect.Type) bool {
 	return typ.Kind() == reflect.Uint8 && !typ.Implements(encoderInterface)
 }
-
+//不明白这个函数？？？？？？？？？
 func writeRawValue(val reflect.Value, w *encbuf) error {
 	w.str = append(w.str, val.Bytes()...)
 	return nil
 }
 
 func writeUint(val reflect.Value, w *encbuf) error {
+	//返回val持有的无符号整数（表示为uint64），如v的Kind不是Uint、Uintptr、Uint8、Uint16、Uint32、Uint64会panic
 	i := val.Uint()
 	if i == 0 {
 		w.str = append(w.str, 0x80)
@@ -403,9 +415,11 @@ func writeUint(val reflect.Value, w *encbuf) error {
 	return nil
 }
 
+//把bool类型的数据填充到encbuf里面去
 func writeBool(val reflect.Value, w *encbuf) error {
+	//返回v持有的布尔值，如果v的Kind不是Bool会panic
 	if val.Bool() {
-		w.str = append(w.str, 0x01)
+		w.str = append(w.str, 0x01)					//append主要用于给某个切片（slice）追加元素
 	} else {
 		w.str = append(w.str, 0x80)
 	}
@@ -458,7 +472,7 @@ func writeByteArray(val reflect.Value, w *encbuf) error {
 
 func writeString(val reflect.Value, w *encbuf) error {
 	s := val.String()
-	if len(s) == 1 && s[0] <= 0x7f {
+	if len(s) == 1 && s[0] <= 0x7f {					//0x7f为127
 		// fits single byte, no string header
 		w.str = append(w.str, s[0])
 	} else {
@@ -523,15 +537,16 @@ func makeSliceWriter(typ reflect.Type, ts tags) (writer, error) {
 	}
 	return writer, nil
 }
-
+//定义了结构体的编码方式
 func makeStructWriter(typ reflect.Type) (writer, error) {
-	fields, err := structFields(typ)
+	fields, err := structFields(typ)			//通过structFields方法得到了所有的字段的编码器
 	if err != nil {
 		return nil, err
 	}
+	//定义writer方法，这个方法遍历所有的字段，每个字段调用其编码器方法。
 	writer := func(val reflect.Value, w *encbuf) error {
 		lh := w.list()
-		for _, f := range fields {
+		for _, f := range fields {					//fields的key为索引，value为info(编码、解码函数构成的结构体)
 			if err := f.info.writer(val.Field(f.index), w); err != nil {
 				return err
 			}
@@ -539,7 +554,7 @@ func makeStructWriter(typ reflect.Type) (writer, error) {
 		w.listEnd(lh)
 		return nil
 	}
-	return writer, nil
+	return writer, nil      				 //返回writer方法
 }
 
 func makePtrWriter(typ reflect.Type) (writer, error) {
@@ -584,7 +599,7 @@ func makePtrWriter(typ reflect.Type) (writer, error) {
 // order, using the least number of bytes needed to represent i.
 func putint(b []byte, i uint64) (size int) {
 	switch {
-	case i < (1 << 8):
+	case i < (1 << 8):			//256
 		b[0] = byte(i)
 		return 1
 	case i < (1 << 16):

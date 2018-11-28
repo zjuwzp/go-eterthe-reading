@@ -94,6 +94,7 @@ func decodeNibbles(nibbles []byte, bytes []byte) {
 }
 
 // prefixLen returns the length of the common prefix of a and b.
+//返回a和b的公共长度
 func prefixLen(a, b []byte) int {
 	var i, length = 0, len(a)
 	if len(b) < length {

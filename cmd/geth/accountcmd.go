@@ -291,7 +291,7 @@ func ambiguousAddrRecovery(ks *keystore.KeyStore, err *keystore.AmbiguousAddrErr
 
 // accountCreate creates a new account into the keystore defined by the CLI flags.
 func accountCreate(ctx *cli.Context) error {
-	cfg := gethConfig{Node: defaultNodeConfig()}
+	cfg := gethConfig{Node: defaultNodeConfig()}			//获取配置
 	// Load config file.
 	if file := ctx.GlobalString(configFileFlag.Name); file != "" {
 		if err := loadConfig(file, &cfg); err != nil {
@@ -299,14 +299,15 @@ func accountCreate(ctx *cli.Context) error {
 		}
 	}
 	utils.SetNodeConfig(ctx, &cfg.Node)
-	scryptN, scryptP, keydir, err := cfg.Node.AccountConfig()
+	scryptN, scryptP, keydir, err := cfg.Node.AccountConfig()     //获取该节点的账号配置
 
 	if err != nil {
 		utils.Fatalf("Failed to read configuration: %v", err)
 	}
-
-	password := getPassPhrase("Your new account is locked with a password. Please give a password. Do not forget this password.", true, 0, utils.MakePasswordList(ctx))
-
+	//解析用户密码
+	password := getPassPhrase("Your new account is locked with a password. Please give a password. " +
+		"Do not forget this password.", true, 0, utils.MakePasswordList(ctx))
+	//生成地址
 	address, err := keystore.StoreKey(keydir, password, scryptN, scryptP)
 
 	if err != nil {

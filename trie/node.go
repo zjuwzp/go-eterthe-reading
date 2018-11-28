@@ -34,17 +34,19 @@ type node interface {
 }
 
 type (
+	//分支节点
 	fullNode struct {
 		Children [17]node // Actual trie node data to encode/decode (needs custom encoder)
 		flags    nodeFlag
 	}
+	//扩展节点、叶子节点
 	shortNode struct {
 		Key   []byte
-		Val   node
+		Val   node				//通过Val的类型来对应到底是叶子节点(valueNode)还是扩展节点(fullNode))
 		flags nodeFlag
 	}
 	hashNode  []byte
-	valueNode []byte
+	valueNode []byte			//叶子节点
 )
 
 // nilValueNode is used when collapsing internal trie nodes for hashing, since

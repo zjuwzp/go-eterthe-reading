@@ -159,15 +159,17 @@ func NewKeyForDirectICAP(rand io.Reader) *Key {
 }
 
 func newKey(rand io.Reader) (*Key, error) {
-	privateKeyECDSA, err := ecdsa.GenerateKey(crypto.S256(), rand)
+	//根据crypto/ecdsa包里的GenerateKey()函数创建一对公私钥，传入随机数使用S256算法（就是secp256k1椭圆曲线算法）
+	//privateKeyECDSA是PrivateKey数据结构的指针，他就是私钥，公钥是私钥数据结构的一个字段。数据结构定义在crypto/ecies/ecies.go
+	privateKeyECDSA, err := ecdsa.GenerateKey(crypto.S256(), rand)			//返回的是*PrivateKey, error
 	if err != nil {
 		return nil, err
 	}
 	return newKeyFromECDSA(privateKeyECDSA), nil
 }
 
-func storeNewKey(ks keyStore, rand io.Reader, auth string) (*Key, accounts.Account, error) {
-	key, err := newKey(rand)
+func storeNewKey(ks keyStore, rand io.Reader, auth string) (*Key, accounts.Account, error) {			//参数类型放在参数的后面
+	key, err := newKey(rand)		//根据随机数去创建key
 	if err != nil {
 		return nil, accounts.Account{}, err
 	}
